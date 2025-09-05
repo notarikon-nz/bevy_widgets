@@ -54,14 +54,11 @@ impl DropdownSpawnCommand {
         let option_ids = option_registry.register_options(self.options);
         
         let dropdown_entity = commands.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Px(200.0),
-                    height: Val::Auto,
-                    flex_direction: FlexDirection::Column,
-                    position_type: PositionType::Relative,
-                    ..default()
-                },
+            Node {
+                width: Val::Px(200.0),
+                height: Val::Auto,
+                flex_direction: FlexDirection::Column,
+                position_type: PositionType::Relative,
                 ..default()
             },
             Dropdown {
@@ -79,58 +76,48 @@ impl DropdownSpawnCommand {
         
         // Spawn button
         let button_entity = commands.spawn((
-            ButtonBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Px(40.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: BackgroundColor(Color::rgb(0.15, 0.15, 0.15)),
+            Button,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(40.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
             DropdownButton,
         )).id();
         
         // Spawn list (initially hidden)
         let list_entity = commands.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Px(0.0),
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(40.0),
-                    overflow: Overflow::clip(),
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                },
-                visibility: Visibility::Hidden,
-                z_index: ZIndex::Local(0),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(0.0),
+                position_type: PositionType::Absolute,
+                top: Val::Px(40.0),
+                overflow: Overflow::clip(),
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
+            Visibility::Hidden,
             DropdownList,
         )).id();
         
         // Spawn backdrop (initially hidden)
         let backdrop_entity = commands.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    position_type: PositionType::Absolute,
-                    ..default()
-                },
-                background_color: BackgroundColor(Color::NONE),
-                visibility: Visibility::Hidden,
-                z_index: ZIndex::Local(-1),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                position_type: PositionType::Absolute,
                 ..default()
             },
+            BackgroundColor(Color::NONE),
+            Visibility::Hidden,
             DropdownBackdrop,
         )).id();
         
         commands.entity(dropdown_entity)
-            .push_children(&[button_entity, list_entity, backdrop_entity]);
+            .add_children(&[button_entity, list_entity, backdrop_entity]);
         
         dropdown_entity
     }

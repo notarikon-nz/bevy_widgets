@@ -3,6 +3,18 @@ use super::{components::*, events::*, resources::SliderInputState};
 use std::time::Duration;
 use std::sync::Arc;
 
+fn format_value(value: f32, format: &ValueFormat) -> String {
+    match format {
+        ValueFormat::Precision(precision) => {
+            format!("{:.prec$}", value, prec = precision)
+        }
+        ValueFormat::Percent(precision) => {
+            format!("{:.prec$}%", value * 100.0, prec = precision)
+        }
+        ValueFormat::Custom(formatter) => formatter(value),
+    }
+}
+
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum SliderSystem {
     ProcessInput,
@@ -15,30 +27,31 @@ pub fn slider_drag_system(
         (
             Entity,
             &Interaction,
-            &Parent,
+            &ChildOf,
             &GlobalTransform,
-            &Style,
         ),
         (With<SliderHandle>, Changed<Interaction>)
     >,
-    q_sliders: Query<(&Slider, &SliderOptions)>,
-    q_tracks: Query<(&GlobalTransform, &Style), With<SliderTrack>>,
+    mut q_sliders: Query<(&mut Slider, &SliderOptions)>,
+    q_tracks: Query<&GlobalTransform, With<SliderTrack>>,
     q_nodes: Query<&Node>, // <- ADDED: Query for computed node sizes
     mut evr_cursor: EventReader<CursorMoved>,
     mut evw_slider_change: EventWriter<SliderValueChangedEvent>,
 ) {
     let cursor_position = evr_cursor.read().last().map(|ev| ev.position);
 
-    for (handle_entity, interaction, parent, handle_transform, handle_style) in &mut q_handles {
+    for (handle_entity, interaction, parent, handle_transform) in &mut q_handles {
         if let (Interaction::Pressed, Some(cursor_pos)) = (interaction, cursor_position) {
-            if let Ok(track_node) = q_nodes.get(parent.get()) {
-                if let Ok((track_transform, track_style)) = q_tracks.get(parent.get()) {
-                    if let Ok((slider, options)) = q_sliders.get(parent.get()) {
+            if let Ok(track_node) = q_nodes.get(parent.parent()) {
+                if let Ok(track_transform) = q_tracks.get(parent.parent()) {
+                    if let Ok((mut slider, options)) = q_sliders.get_mut(parent.parent()) {
+                        // Compute size from Node - simplified approach
+                        let track_size = Vec2::new(200.0, 24.0); // Use default size
                         let new_value = cursor_position_to_value(
                             cursor_pos,
                             track_transform,
-                            track_node.size(),
-                            slider,
+                            track_size,
+                            &slider,
                         );
 
                     let stepped_new_value = apply_step(new_value, slider.min, slider.step);
@@ -46,11 +59,12 @@ pub fn slider_drag_system(
 
                     if (clamped_new_value - slider.value).abs() > f32::EPSILON {
                         let previous_value = slider.value;
+                        slider.value = clamped_new_value; // Update the actual slider value
                         
-                        commands.entity(parent.get()).insert(SliderNeedsVisualUpdate);
+                        commands.entity(parent.parent()).insert(SliderNeedsVisualUpdate);
                         
-                            evw_slider_change.send(SliderValueChangedEvent {
-                                entity: parent.get(),
+                            evw_slider_change.write(SliderValueChangedEvent {
+                                entity: parent.parent(),
                                 handle_entity,
                                 previous_value,
                                 new_value: clamped_new_value,
@@ -117,7 +131,7 @@ pub fn slider_keyboard_input_system(
                 let previous_value = slider.value;
                 slider.value = new_value;
 
-                evw_slider_change.send(SliderValueChangedEvent {
+                evw_slider_change.write(SliderValueChangedEvent {
                     entity,
                     handle_entity: slider.handle_entity, // Would need to be looked up
                     previous_value,
@@ -138,14 +152,14 @@ pub fn slider_update_visuals_system(
         (Entity, &Slider, &SliderOptions, &Children),
         With<SliderNeedsVisualUpdate>
     >,
-    mut q_handles: Query<&mut Style, With<SliderHandle>>,
-    mut q_fills: Query<&mut Style, With<SliderFill>>,
+    mut q_handles: Query<&mut Node, (With<SliderHandle>, Without<SliderFill>)>,
+    mut q_fills: Query<&mut Node, (With<SliderFill>, Without<SliderHandle>)>,
     mut q_text: Query<&mut Text, With<SliderValueText>>,
 ) {
     for (slider_entity, slider, options, children) in &mut q_sliders {
         let normalized_value = (slider.value - slider.min) / (slider.max - slider.min);
         
-        for &child in children.iter() {
+        for child in children.iter() {
             if let Ok(mut handle_style) = q_handles.get_mut(child) {
                 match slider.orientation {
                     SliderOrientation::Horizontal => {
@@ -169,7 +183,7 @@ pub fn slider_update_visuals_system(
             }
             
             if let Ok(mut text) = q_text.get_mut(child) {
-                text.sections[0].value = options.format.format(slider.value);
+                **text = format_value(slider.value, &options.format);
             }
         }
         

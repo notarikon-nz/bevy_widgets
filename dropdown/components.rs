@@ -2,13 +2,35 @@ use bevy::prelude::*;
 use bevy::ui::*;
 use std::sync::Arc;
 
-#[derive(Component, Debug, Clone, Reflect)]
+#[derive(Component, Reflect)]
 pub struct Dropdown {
     pub option_ids: Vec<DropdownOptionId>,
     pub selected_id: Option<DropdownOptionId>,
     pub is_open: bool,
     #[reflect(ignore)]
     pub on_change: Option<Box<dyn Fn(Option<DropdownOptionId>) + Send + Sync>>,
+}
+
+impl Clone for Dropdown {
+    fn clone(&self) -> Self {
+        Self {
+            option_ids: self.option_ids.clone(),
+            selected_id: self.selected_id,
+            is_open: self.is_open,
+            on_change: None, // Don't clone function pointers
+        }
+    }
+}
+
+impl std::fmt::Debug for Dropdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dropdown")
+            .field("option_ids", &self.option_ids)
+            .field("selected_id", &self.selected_id)
+            .field("is_open", &self.is_open)
+            .field("on_change", &self.on_change.as_ref().map(|_| "Some(fn)"))
+            .finish()
+    }
 }
 
 #[derive(Component, Debug, Clone, Reflect)]

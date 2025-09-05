@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::ui::*;
 use super::{components::*, events::*, resources::*};
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
@@ -15,7 +16,7 @@ pub fn dropdown_toggle_system(
     mut evw_dropdown_change: EventWriter<DropdownChangedEvent>,
 ) {
     for (dropdown_entity, mut dropdown, children) in &mut q_dropdowns {
-        for &child in children.iter() {
+        for child in children.iter() {
             if let Ok(interaction) = q_buttons.get(child) {
                 if let Interaction::Pressed = interaction {
                     dropdown.is_open = !dropdown.is_open;
@@ -26,7 +27,7 @@ pub fn dropdown_toggle_system(
                         DropdownChangeKind::Closed
                     };
                     
-                    evw_dropdown_change.send(DropdownChangedEvent {
+                    evw_dropdown_change.write(DropdownChangedEvent {
                         dropdown_entity,
                         kind,
                         previous_id: dropdown.selected_id,
@@ -51,16 +52,17 @@ pub fn dropdown_toggle_system(
 pub fn dropdown_backdrop_system(
     mut commands: Commands,
     mut q_backdrops: Query<(Entity, &Interaction), (With<DropdownBackdrop>, Changed<Interaction>)>,
-    q_parents: Query<&Parent, With<DropdownBackdrop>>,
+    q_parents: Query<&ChildOf, With<DropdownBackdrop>>,
+    mut q_dropdowns: Query<(Entity, &mut Dropdown, &Children)>,
     mut evw_dropdown_change: EventWriter<DropdownChangedEvent>,
 ) {
     for (backdrop_entity, interaction) in &mut q_backdrops {
         if let Interaction::Pressed = interaction {
             if let Ok(parent) = q_parents.get(backdrop_entity) {
-                if let Ok((dropdown_entity, mut dropdown, _)) = q_dropdowns.get_mut(parent.get()) {
+                if let Ok((dropdown_entity, mut dropdown, _)) = q_dropdowns.get_mut(parent.parent()) {
                     dropdown.is_open = false;
                     
-                    evw_dropdown_change.send(DropdownChangedEvent {
+                    evw_dropdown_change.write(DropdownChangedEvent {
                         dropdown_entity,
                         kind: DropdownChangeKind::Cancelled,
                         previous_id: dropdown.selected_id,
@@ -82,14 +84,14 @@ pub fn dropdown_option_select_system(
     mut commands: Commands,
     option_registry: Res<DropdownOptionRegistry>,
     mut q_dropdowns: Query<(Entity, &mut Dropdown)>,
-    q_option_parents: Query<&Parent, With<DropdownOptionElement>>,
+    q_option_parents: Query<&ChildOf, With<DropdownOptionElement>>,
     mut q_options: Query<(Entity, &Interaction, &DropdownOptionElement), Changed<Interaction>>,
     mut evw_dropdown_change: EventWriter<DropdownChangedEvent>,
 ) {
     for (option_entity, interaction, option_element) in &mut q_options {
         if let Interaction::Pressed = interaction {
             if let Ok(parent) = q_option_parents.get(option_entity) {
-                if let Ok((dropdown_entity, mut dropdown)) = q_dropdowns.get_mut(parent.get()) {
+                if let Ok((dropdown_entity, mut dropdown)) = q_dropdowns.get_mut(parent.parent()) {
                     let previous_id = dropdown.selected_id;
                     let previous_label = previous_id.and_then(|id| 
                         option_registry.options.get(&id).map(|o| o.label.clone())
@@ -101,7 +103,7 @@ pub fn dropdown_option_select_system(
                     let new_label = option_registry.options.get(&option_element.0)
                         .map(|o| o.label.clone());
                     
-                    evw_dropdown_change.send(DropdownChangedEvent {
+                    evw_dropdown_change.write(DropdownChangedEvent {
                         dropdown_entity,
                         kind: DropdownChangeKind::SelectionChanged,
                         previous_id,
@@ -151,11 +153,11 @@ pub fn dropdown_visual_update_system(
     mut commands: Commands,
     option_registry: Res<DropdownOptionRegistry>,
     mut q_dropdowns: Query<(Entity, &Dropdown, &DropdownAnimation, &DropdownConfig, &Children), With<DropdownNeedsVisualUpdate>>,
-    q_buttons: Query<&mut Text, With<DropdownButton>>,
-    q_lists: Query<(&mut Style, &mut Visibility, &mut Transform), With<DropdownList>>,
+    mut q_buttons: Query<&mut Text, With<DropdownButton>>,
+    mut q_lists: Query<(&mut Node, &mut Visibility, &mut Transform), With<DropdownList>>,
 ) {
     for (entity, dropdown, animation, config, children) in &mut q_dropdowns {
-        for &child in children.iter() {
+        for child in children.iter() {
             if let Ok(mut text) = q_buttons.get_mut(child) {
                 let display_text = if let Some(id) = dropdown.selected_id {
                     option_registry.options.get(&id).map(|o| o.label.clone())
@@ -163,11 +165,14 @@ pub fn dropdown_visual_update_system(
                 } else {
                     config.placeholder.clone()
                 };
-                text.sections[0].value = display_text;
+                **text = display_text;
             }
             
             if let Ok((mut list_style, mut visibility, mut transform)) = q_lists.get_mut(child) {
-                let max_height = config.max_height.try_into().unwrap_or(200.0);
+                let max_height = match config.max_height {
+                    Val::Px(px) => px,
+                    _ => 200.0,
+                };
                 let height = animation.progress * max_height;
                 
                 if animation.progress <= config.animation_config.precision {
@@ -224,17 +229,17 @@ pub fn dropdown_focus_management_system(
 }
 
 pub fn dropdown_keyboard_system(
-    mut q_dropdowns: Query<(&mut Dropdown, &DropdownAnimation), With<DropdownFocused>>,
+    mut q_dropdowns: Query<(Entity, &mut Dropdown, &DropdownAnimation), With<DropdownFocused>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut evw_dropdown_change: EventWriter<DropdownChangedEvent>,
     mut commands: Commands,
 ) {
-    for (mut dropdown, animation) in &mut q_dropdowns {
+    for (entity, mut dropdown, animation) in &mut q_dropdowns {
         if keys.just_pressed(KeyCode::Escape) && dropdown.is_open {
             dropdown.is_open = false;
             
-            evw_dropdown_change.send(DropdownChangedEvent {
-                dropdown_entity: commands.entity(), // Would need entity access
+            evw_dropdown_change.write(DropdownChangedEvent {
+                dropdown_entity: entity,
                 kind: DropdownChangeKind::Cancelled,
                 previous_id: dropdown.selected_id,
                 new_id: dropdown.selected_id,
@@ -242,7 +247,7 @@ pub fn dropdown_keyboard_system(
                 new_label: None,
             });
             
-            commands.entity(commands.entity()).insert(DropdownNeedsVisualUpdate);
+            commands.entity(entity).insert(DropdownNeedsVisualUpdate);
         }
     }
 }

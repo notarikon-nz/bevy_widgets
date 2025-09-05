@@ -1,15 +1,15 @@
 use bevy::prelude::*;
-use super::{components::*, events::*, resources::*, systems::*};
 
 pub mod components;
 pub mod resources;
 pub mod events;
 pub mod systems;
 pub mod builder;
-pub mod plugin;
 
 pub use components::*;
 pub use events::*;
+pub use resources::*;
+pub use systems::*;
 pub use builder::SliderBuilder;
 
 pub struct SliderPlugin;

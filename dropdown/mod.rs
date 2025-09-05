@@ -3,14 +3,16 @@ pub mod resources;
 pub mod events;
 pub mod systems;
 pub mod builder;
-pub mod plugin;
-
 pub use components::*;
 pub use events::*;
+pub use resources::*;
 pub use builder::{DropdownBuilder, DropdownSpawnCommand};
 
 use bevy::prelude::*;
-use super::{components::*, events::*, resources::*, systems::*};
+use components::*;
+use events::*;
+use resources::*;
+use systems::*;
 
 pub struct DropdownPlugin;
 

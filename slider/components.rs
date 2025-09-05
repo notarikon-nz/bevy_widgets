@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use bevy::ui::*;
+use std::sync::Arc;
 
 #[derive(Component, Debug, Clone)]
 pub struct Slider {
@@ -27,11 +29,21 @@ pub struct SliderPendingChange {
     pub value: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ValueFormat {
     Precision(usize),
     Percent(usize),
     Custom(Arc<dyn Fn(f32) -> String + Send + Sync>),
+}
+
+impl std::fmt::Debug for ValueFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueFormat::Precision(p) => write!(f, "Precision({})", p),
+            ValueFormat::Percent(p) => write!(f, "Percent({})", p),
+            ValueFormat::Custom(_) => write!(f, "Custom(fn)"),
+        }
+    }
 }
 
 impl Default for ValueFormat {
@@ -76,7 +88,6 @@ pub struct SliderBundle {
     pub slider: Slider,
     pub options: SliderOptions,
     pub node: Node,
-    pub style: Style,
     pub background_color: BackgroundColor,
     pub focus_policy: FocusPolicy,
 }
@@ -96,8 +107,7 @@ impl Default for SliderBundle {
                 format: ValueFormat::default(),
                 show_value: true,
             },
-            node: Node::default(),
-            style: Style {
+            node: Node {
                 width: Val::Px(200.0),
                 height: Val::Px(24.0),
                 justify_content: JustifyContent::Center,
