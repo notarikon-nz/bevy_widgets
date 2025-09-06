@@ -6,12 +6,9 @@ pub mod builder;
 pub use components::*;
 pub use events::*;
 pub use resources::*;
-pub use builder::{DropdownBuilder, DropdownSpawnCommand};
+pub use builder::{DropdownBuilder};
 
 use bevy::prelude::*;
-use components::*;
-use events::*;
-use resources::*;
 use systems::*;
 
 pub struct DropdownPlugin;

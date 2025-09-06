@@ -1,6 +1,4 @@
 use bevy::prelude::*;
-use bevy::ui::*;
-use std::sync::Arc;
 
 #[derive(Component, Reflect)]
 pub struct Dropdown {
@@ -98,3 +96,18 @@ pub struct DropdownAnimation {
 }
 
 pub type DropdownOptionId = u32;
+
+#[derive(Component)]
+pub struct ChildOf {
+    parent: Entity,
+}
+
+impl ChildOf {
+    pub fn new(parent: Entity) -> Self {
+        Self { parent }
+    }
+    
+    pub fn parent(&self) -> Entity {
+        self.parent
+    }
+}

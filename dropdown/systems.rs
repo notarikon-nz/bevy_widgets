@@ -1,6 +1,5 @@
 use bevy::prelude::*;
-use bevy::ui::*;
-use super::{components::*, events::*, resources::*};
+use super::{components::{ChildOf as DropdownChildOf, *}, events::*, resources::*};
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum DropdownSystem {
@@ -52,7 +51,7 @@ pub fn dropdown_toggle_system(
 pub fn dropdown_backdrop_system(
     mut commands: Commands,
     mut q_backdrops: Query<(Entity, &Interaction), (With<DropdownBackdrop>, Changed<Interaction>)>,
-    q_parents: Query<&ChildOf, With<DropdownBackdrop>>,
+    q_parents: Query<&DropdownChildOf, With<DropdownBackdrop>>,
     mut q_dropdowns: Query<(Entity, &mut Dropdown, &Children)>,
     mut evw_dropdown_change: EventWriter<DropdownChangedEvent>,
 ) {
@@ -84,40 +83,43 @@ pub fn dropdown_option_select_system(
     mut commands: Commands,
     option_registry: Res<DropdownOptionRegistry>,
     mut q_dropdowns: Query<(Entity, &mut Dropdown)>,
-    q_option_parents: Query<&ChildOf, With<DropdownOptionElement>>,
+    q_option_parents: Query<&DropdownChildOf, With<DropdownOptionElement>>,
     mut q_options: Query<(Entity, &Interaction, &DropdownOptionElement), Changed<Interaction>>,
     mut evw_dropdown_change: EventWriter<DropdownChangedEvent>,
 ) {
     for (option_entity, interaction, option_element) in &mut q_options {
         if let Interaction::Pressed = interaction {
             if let Ok(parent) = q_option_parents.get(option_entity) {
-                if let Ok((dropdown_entity, mut dropdown)) = q_dropdowns.get_mut(parent.parent()) {
-                    let previous_id = dropdown.selected_id;
-                    let previous_label = previous_id.and_then(|id| 
-                        option_registry.options.get(&id).map(|o| o.label.clone())
-                    );
-                    
-                    dropdown.selected_id = Some(option_element.0);
-                    dropdown.is_open = false;
-                    
-                    let new_label = option_registry.options.get(&option_element.0)
-                        .map(|o| o.label.clone());
-                    
-                    evw_dropdown_change.write(DropdownChangedEvent {
-                        dropdown_entity,
-                        kind: DropdownChangeKind::SelectionChanged,
-                        previous_id,
-                        new_id: Some(option_element.0),
-                        previous_label,
-                        new_label,
-                    });
-                    
-                    commands.entity(dropdown_entity)
-                        .insert(DropdownNeedsVisualUpdate)
-                        .remove::<DropdownFocused>();
-                    
-                    if let Some(callback) = &dropdown.on_change {
-                        callback(Some(option_element.0));
+                // The parent is the list entity, we need the grandparent (dropdown entity)
+                if let Ok(list_parent) = q_option_parents.get(parent.parent()) {
+                    if let Ok((dropdown_entity, mut dropdown)) = q_dropdowns.get_mut(list_parent.parent()) {
+                        let previous_id = dropdown.selected_id;
+                        let previous_label = previous_id.and_then(|id| 
+                            option_registry.options.get(&id).map(|o| o.label.clone())
+                        );
+                        
+                        dropdown.selected_id = Some(option_element.0);
+                        dropdown.is_open = false;
+                        
+                        let new_label = option_registry.options.get(&option_element.0)
+                            .map(|o| o.label.clone());
+                        
+                        evw_dropdown_change.write(DropdownChangedEvent {
+                            dropdown_entity,
+                            kind: DropdownChangeKind::SelectionChanged,
+                            previous_id,
+                            new_id: Some(option_element.0),
+                            previous_label,
+                            new_label,
+                        });
+                        
+                        commands.entity(dropdown_entity)
+                            .insert(DropdownNeedsVisualUpdate)
+                            .remove::<DropdownFocused>();
+                        
+                        if let Some(callback) = &dropdown.on_change {
+                            callback(Some(option_element.0));
+                        }
                     }
                 }
             }

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use super::{components::*, events::*, resources::SliderInputState};
 use std::time::Duration;
-use std::sync::Arc;
 
 fn format_value(value: f32, format: &ValueFormat) -> String {
     match format {
@@ -30,23 +29,55 @@ pub fn slider_drag_system(
             &ChildOf,
             &GlobalTransform,
         ),
-        (With<SliderHandle>, Changed<Interaction>)
+        With<SliderHandle>
     >,
     mut q_sliders: Query<(&mut Slider, &SliderOptions)>,
-    q_tracks: Query<&GlobalTransform, With<SliderTrack>>,
+    q_tracks: Query<(&GlobalTransform, &ChildOf), With<SliderTrack>>,
     q_nodes: Query<&Node>, // <- ADDED: Query for computed node sizes
     mut evr_cursor: EventReader<CursorMoved>,
     mut evw_slider_change: EventWriter<SliderValueChangedEvent>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    cursor_position_res: Res<crate::user_interface::CursorPosition>,
 ) {
-    let cursor_position = evr_cursor.read().last().map(|ev| ev.position);
+    // Get the latest cursor position from events or from the stored position
+    let cursor_position = evr_cursor.read().last().map(|ev| ev.position)
+        .or(cursor_position_res.0);
 
     for (handle_entity, interaction, parent, handle_transform) in &mut q_handles {
-        if let (Interaction::Pressed, Some(cursor_pos)) = (interaction, cursor_position) {
-            if let Ok(track_node) = q_nodes.get(parent.parent()) {
-                if let Ok(track_transform) = q_tracks.get(parent.parent()) {
-                    if let Ok((mut slider, options)) = q_sliders.get_mut(parent.parent()) {
-                        // Compute size from Node - simplified approach
-                        let track_size = Vec2::new(200.0, 24.0); // Use default size
+        if *interaction == Interaction::Pressed {
+            info!("Slider handle interaction detected: Pressed");
+        }
+        // Handle both initial press and continuous dragging while mouse button is held
+        let should_update = match interaction {
+            Interaction::Pressed if mouse_input.pressed(MouseButton::Left) => {
+                true
+            },
+            Interaction::Hovered if mouse_input.pressed(MouseButton::Left) => {
+                true
+            },
+            _ => false
+        };
+        
+        if should_update {
+            info!("Processing slider drag with cursor position: {:?}", cursor_position);
+            info!("Handle entity: {:?}, Parent: {:?}", handle_entity, parent.parent());
+        }
+        
+        if should_update && cursor_position.is_some() {
+            let cursor_pos = cursor_position.unwrap();
+            // Get the track entity (parent of handle)
+            let track_entity = parent.parent();
+            if let Ok(track_node) = q_nodes.get(track_entity) {
+                if let Ok((track_transform, track_parent)) = q_tracks.get(track_entity) {
+                    // Get the slider entity (parent of track)
+                    let slider_entity = track_parent.parent();
+                    if let Ok((mut slider, options)) = q_sliders.get_mut(slider_entity) {
+                        info!("Found slider components - proceeding with value calculation");
+                        // Compute size from Node - get actual computed size
+                        // For now, use default slider dimensions since computed size isn't working correctly
+                        let track_size = Vec2::new(200.0, 24.0); // TODO: Get actual computed size
+                        info!("Using fallback track size: {:?}", track_size);
+                        info!("Track size: {:?}, Track transform: {:?}", track_size, track_transform.translation());
                         let new_value = cursor_position_to_value(
                             cursor_pos,
                             track_transform,
@@ -57,22 +88,32 @@ pub fn slider_drag_system(
                     let stepped_new_value = apply_step(new_value, slider.min, slider.step);
                     let clamped_new_value = stepped_new_value.clamp(slider.min, slider.max);
 
+                    info!("Slider value calculation: old={}, new={}, clamped={}", slider.value, new_value, clamped_new_value);
+
                     if (clamped_new_value - slider.value).abs() > f32::EPSILON {
                         let previous_value = slider.value;
                         slider.value = clamped_new_value; // Update the actual slider value
                         
-                        commands.entity(parent.parent()).insert(SliderNeedsVisualUpdate);
+                        commands.entity(slider_entity).insert(SliderNeedsVisualUpdate);
+                        info!("Added SliderNeedsVisualUpdate to entity: {:?}", slider_entity);
                         
+                        info!("Sending slider value changed event: {} -> {}", previous_value, clamped_new_value);
                             evw_slider_change.write(SliderValueChangedEvent {
-                                entity: parent.parent(),
+                                entity: slider_entity,
                                 handle_entity,
                                 previous_value,
                                 new_value: clamped_new_value,
                                 orientation: slider.orientation,
                             });
                         }
+                    } else {
+                        info!("Failed to get slider component for slider entity: {:?}", slider_entity);
                     }
+                } else {
+                    info!("Failed to get track transform for track entity: {:?}", track_entity);
                 }
+            } else {
+                info!("Failed to get track node for track entity: {:?}", track_entity);
             }
         }
     }
@@ -155,18 +196,45 @@ pub fn slider_update_visuals_system(
     mut q_handles: Query<&mut Node, (With<SliderHandle>, Without<SliderFill>)>,
     mut q_fills: Query<&mut Node, (With<SliderFill>, Without<SliderHandle>)>,
     mut q_text: Query<&mut Text, With<SliderValueText>>,
+    q_children: Query<&Children>,
 ) {
     for (slider_entity, slider, options, children) in &mut q_sliders {
         let normalized_value = (slider.value - slider.min) / (slider.max - slider.min);
+        info!("Visual update for slider {:?}: value={}, normalized={}", slider_entity, slider.value, normalized_value);
         
+        // Look through direct children and their children for handles
         for child in children.iter() {
+            // Try direct child first
             if let Ok(mut handle_style) = q_handles.get_mut(child) {
                 match slider.orientation {
                     SliderOrientation::Horizontal => {
-                        handle_style.left = Val::Percent(normalized_value * 100.0);
+                        let new_left = normalized_value * 100.0;
+                        info!("Updating handle position: left={}%", new_left);
+                        handle_style.left = Val::Percent(new_left);
                     }
                     SliderOrientation::Vertical => {
-                        handle_style.bottom = Val::Percent(normalized_value * 100.0);
+                        let new_bottom = normalized_value * 100.0;
+                        info!("Updating handle position: bottom={}%", new_bottom);
+                        handle_style.bottom = Val::Percent(new_bottom);
+                    }
+                }
+            }
+            // If not found, check grandchildren (track -> handle)
+            else if let Ok(grandchildren) = q_children.get(child) {
+                for grandchild in grandchildren.iter() {
+                    if let Ok(mut handle_style) = q_handles.get_mut(grandchild) {
+                        match slider.orientation {
+                            SliderOrientation::Horizontal => {
+                                let new_left = normalized_value * 100.0;
+                                info!("Updating handle position (grandchild): left={}%", new_left);
+                                handle_style.left = Val::Percent(new_left);
+                            }
+                            SliderOrientation::Vertical => {
+                                let new_bottom = normalized_value * 100.0;
+                                info!("Updating handle position (grandchild): bottom={}%", new_bottom);
+                                handle_style.bottom = Val::Percent(new_bottom);
+                            }
+                        }
                     }
                 }
             }
